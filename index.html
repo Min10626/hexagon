@@ -1,314 +1,29 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-
-// --- 설정 및 상수 ---
-const BOARD_RADIUS = 4; // 보드 크기 (반지름)
-const HEX_SIZE = 22; // 육각형 크기
-const WIN_CONDITION = 5; // 5목
-
-// 축 방향 (Axial Coordinates 기준 3가지 축)
-const AXES = [
-  [1, 0], // 가로
-  [0, 1], // 좌상/우하
-  [1, -1] // 우상/좌하
-];
-
-// 육각형 폴리곤 꼭짓점 계산
-const getHexPoints = (size) => {
-  const points = [];
-  for (let i = 0; i < 6; i++) {
-    const angle_deg = 60 * i - 30;
-    const angle_rad = (Math.PI / 180) * angle_deg;
-    points.push(`${size * Math.cos(angle_rad)},${size * Math.sin(angle_rad)}`);
-  }
-  return points.join(' ');
-};
-const HEX_POINTS = getHexPoints(HEX_SIZE - 1); // 타일 간 여백을 위해 약간 작게
-const INNER_HEX_POINTS = getHexPoints(HEX_SIZE * 0.45); // 내부 코어용 작은 육각형
-
-const DIFFICULTY_LEVELS = ['매우 쉬움', '쉬움', '보통', '어려움', '매우 어려움', '극악'];
-// 사이버펑크 배경(어두운 남색/시안)과 어울리는 하이테크 네온 컬러로 변경
-const DIFF_COLORS = [
-  'text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]',
-  'text-blue-400 drop-shadow-[0_0_10px_rgba(96,165,250,0.8)]',
-  'text-indigo-400 drop-shadow-[0_0_10px_rgba(129,140,248,0.8)]',
-  'text-fuchsia-400 drop-shadow-[0_0_10px_rgba(232,121,249,0.8)]',
-  'text-rose-500 drop-shadow-[0_0_10px_rgba(244,63,94,0.8)]',
-  'text-red-600 drop-shadow-[0_0_15px_rgba(220,38,38,1)] animate-pulse'
-];
-
-export default function App() {
-  const [gameState, setGameState] = useState('menu'); // 'menu' or 'playing'
-  const [difficulty, setDifficulty] = useState(2); // 0~5 기본 '보통'
-  const [board, setBoard] = useState({});
-  const [turn, setTurn] = useState('user'); // 'user' or 'robot'
-  const [winner, setWinner] = useState(null);
-  const [logs, setLogs] = useState(['[SYSTEM] Hexa-Core Conquest 시스템 부팅 완료.', '[SYSTEM] 유저(Cyan)가 먼저 시작합니다.']);
-  const [isTerminalOpen, setIsTerminalOpen] = useState(true); // 터미널 패널 표시 여부 상태
-  const logsEndRef = useRef(null);
-
-  const startGame = () => {
-    setGameState('playing');
-    initBoard();
-    setLogs([
-      `[SYSTEM] 전투 인스턴스 생성 중...`,
-      `[SYSTEM] 설정된 난이도: [${DIFFICULTY_LEVELS[difficulty]}]`,
-      '[SYSTEM] 유저(Cyan) 턴 대기 중.'
-    ]);
-  };
-
-  // 보드 초기화
-  const initBoard = useCallback(() => {
-    const newBoard = {};
-    for (let q = -BOARD_RADIUS; q <= BOARD_RADIUS; q++) {
-      for (let r = -BOARD_RADIUS; r <= BOARD_RADIUS; r++) {
-        if (Math.abs(q + r) <= BOARD_RADIUS) {
-          newBoard[`${q},${r}`] = null;
-        }
-      }
-    }
-    setBoard(newBoard);
-    setWinner(null);
-    setTurn('user');
-    setLogs(['[SYSTEM] 보드가 초기화되었습니다. 전투 준비 완료.']);
-  }, []);
-
-  useEffect(() => {
-    initBoard();
-  }, [initBoard]);
-
-  // 로그 자동 스크롤
-  useEffect(() => {
-    if (logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [logs]);
-
-  const addLog = (msg) => {
-    setLogs((prev) => [...prev, msg]);
-  };
-
-  // 승리 조건 확인 로직
-  const checkWin = (currentBoard, q, r, player) => {
-    for (let [dq, dr] of AXES) {
-      let count = 1;
-
-      // 정방향 체크
-      let nq = q + dq, nr = r + dr;
-      while (currentBoard[`${nq},${nr}`] === player) {
-        count++;
-        nq += dq;
-        nr += dr;
-      }
-
-      // 역방향 체크
-      nq = q - dq; nr = r - dr;
-      while (currentBoard[`${nq},${nr}`] === player) {
-        count++;
-        nq -= dq;
-        nr -= dr;
-      }
-
-      if (count >= WIN_CONDITION) return true;
-    }
-    return false;
-  };
-
-  // --- AI 평가 로직 ---
-  const getLineLength = (b, q, r, dq, dr, player) => {
-    let count = 0;
-    let nq = q + dq, nr = r + dr;
-    while (b[`${nq},${nr}`] === player) {
-      count++;
-      nq += dq;
-      nr += dr;
-    }
-    return count;
-  };
-
-  const evaluateMove = (b, q, r) => {
-    let score = 0;
-    // 맵 중앙 선호도 (초반 포석용)
-    score += (10 - (Math.abs(q) + Math.abs(r) + Math.abs(q + r)) / 2);
-
-    for (let [dq, dr] of AXES) {
-      let rTotal = getLineLength(b, q, r, dq, dr, 'robot') + getLineLength(b, q, r, -dq, -dr, 'robot') + 1;
-      let uTotal = getLineLength(b, q, r, dq, dr, 'user') + getLineLength(b, q, r, -dq, -dr, 'user') + 1;
-
-      // 로봇 자신의 승리 및 연결 가중치
-      if (rTotal >= 5) score += 100000;      // 승리 확정
-      else if (rTotal === 4) score += 10000; // 4목
-      else if (rTotal === 3) score += 100;   // 3목
-      else if (rTotal === 2) score += 10;
-
-      // 유저의 연결 방해 가중치 (방어가 조금 더 급함)
-      if (uTotal >= 5) score += 50000;       // 무조건 막아야 함
-      else if (uTotal === 4) score += 5000;  // 위험
-      else if (uTotal === 3) score += 50;
-      else if (uTotal === 2) score += 5;
-    }
-    return score;
-  };
-
-  const getAIMove = (currentBoard, diffIdx) => {
-    const emptyCoords = Object.keys(currentBoard).filter((key) => currentBoard[key] === null);
-    if (emptyCoords.length === 0) return null;
-
-    // 난이도별 무작위 선택 확률 [매우쉬움, 쉬움, 보통, 어려움, 매우어려움, 극악]
-    const randomChances = [1.0, 0.7, 0.4, 0.15, 0.0, 0.0];
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexa-Core Conquest</title>
     
-    if (Math.random() < randomChances[diffIdx]) {
-      return emptyCoords[Math.floor(Math.random() * emptyCoords.length)];
-    }
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts (Orbitron & Black Han Sans) -->
+    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+        .font-black-han { font-family: 'Black Han Sans', sans-serif; font-weight: normal; letter-spacing: 0.05em; }
 
-    let bestScore = -1;
-    let bestMoves = [];
-
-    emptyCoords.forEach(coord => {
-      const [q, r] = coord.split(',').map(Number);
-      let score = evaluateMove(currentBoard, q, r);
-      
-      // 변수 추가: 극악 난이도는 정확히, 그 외엔 약간의 실수 여지(노이즈)
-      if (diffIdx !== 5) {
-        score += Math.random() * (5 - diffIdx);
-      } else {
-        score += Math.random() * 0.1; // 극악은 동일 점수 간 랜덤성만 유지
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMoves = [coord];
-      } else if (Math.floor(score) === Math.floor(bestScore)) {
-        bestMoves.push(coord);
-      }
-    });
-
-    return bestMoves[Math.floor(Math.random() * bestMoves.length)];
-  };
-  // --- AI 평가 로직 끝 ---
-
-  // 유저 클릭 핸들러
-  const handleTileClick = (q, r) => {
-    if (winner || turn !== 'user' || board[`${q},${r}`]) return;
-
-    const newBoard = { ...board, [`${q},${r}`]: 'user' };
-    setBoard(newBoard);
-    addLog(`[USER] 좌표 [${q}, ${r}] 점령 완료.`);
-
-    if (checkWin(newBoard, q, r, 'user')) {
-      setWinner('user');
-      addLog('!!! [SYSTEM] 유저 승리! 코어 해킹에 성공했습니다. !!!');
-    } else {
-      setTurn('robot');
-    }
-  };
-
-  // 로봇(AI) 턴 로직
-  useEffect(() => {
-    if (turn === 'robot' && !winner) {
-      addLog('[ROBOT] 최적의 경로 분석 중...');
-      
-      const timer = setTimeout(() => {
-        const targetCoord = getAIMove(board, difficulty);
-        
-        if (!targetCoord) {
-          setWinner('draw');
-          addLog('[SYSTEM] 더 이상 공간이 없습니다. 무승부입니다.');
-          return;
-        }
-
-        const [q, r] = targetCoord.split(',').map(Number);
-
-        const newBoard = { ...board, [`${q},${r}`]: 'robot' };
-        setBoard(newBoard);
-        addLog(`[ROBOT] 카운터 프로토콜 가동. 좌표 [${q}, ${r}] 방어 구축.`);
-
-        if (checkWin(newBoard, q, r, 'robot')) {
-          setWinner('robot');
-          addLog('!!! [SYSTEM] 로봇 승리. 방화벽에 의해 차단되었습니다. !!!');
-        } else {
-          setTurn('user');
-        }
-      }, 800); // 약간의 대기시간
-
-      return () => clearTimeout(timer);
-    }
-  }, [turn, board, winner, difficulty]);
-
-  // UI 렌더링
-  if (gameState === 'menu') {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen w-full bg-[#05050a] text-gray-200 font-mono relative overflow-hidden bg-cyber-grid">
-        {/* 네온 배경 효과 */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/10 blur-[150px] rounded-full pointer-events-none"></div>
-        
-        <div className="relative z-10 flex flex-col items-center">
-          <p className="text-cyan-500/50 tracking-[0.5em] text-sm mb-2 font-bold animate-pulse">PROTOCOL: INITIATION</p>
-          <h1 className="text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-blue-600 mb-16 tracking-widest uppercase drop-shadow-[0_0_25px_rgba(0,255,255,0.4)] text-center" style={{ fontFamily: "'Orbitron', sans-serif" }}>
-            Hexa-Core
-            <span className="block text-3xl md:text-5xl text-gray-100 mt-2 tracking-[0.3em] drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">Conquest</span>
-          </h1>
-        </div>
-
-        <div className="w-full max-w-md bg-black/40 p-1 relative shadow-[0_0_50px_rgba(0,0,0,1)] backdrop-blur-md z-10 border border-cyan-900/30">
-          {/* 사이버펑크 모서리 장식 */}
-          <div className="absolute -top-1 -left-1 w-6 h-6 border-t-2 border-l-2 border-cyan-500"></div>
-          <div className="absolute -top-1 -right-1 w-6 h-6 border-t-2 border-r-2 border-cyan-500"></div>
-          <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-2 border-l-2 border-cyan-500"></div>
-          <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-2 border-r-2 border-cyan-500"></div>
-          
-          <div className="bg-[#0a0a12]/90 p-8 border border-gray-800/50 h-full w-full">
-            <h2 className="text-sm text-center mb-10 text-cyan-600 font-bold tracking-[0.4em] flex items-center justify-center gap-3">
-              <span className="w-12 h-[1px] bg-gradient-to-r from-transparent to-cyan-600"></span>
-              SYS.DIFFICULTY
-              <span className="w-12 h-[1px] bg-gradient-to-l from-transparent to-cyan-600"></span>
-            </h2>
-
-            <div className="flex flex-col items-center gap-8 mb-12">
-              <span className={`text-5xl md:text-6xl transition-all duration-300 ${DIFF_COLORS[difficulty]}`} style={{ fontFamily: "'Black Han Sans', sans-serif", fontWeight: 'normal', letterSpacing: '0.05em' }}>
-                {DIFFICULTY_LEVELS[difficulty]}
-              </span>
-              
-              <div className="w-full relative px-2 mt-4">
-                <div className="absolute top-1/2 left-0 w-full h-1 -translate-y-1/2 bg-gray-900 flex justify-between px-2">
-                   {[...Array(6)].map((_, i) => (
-                     <div key={i} className="w-1 h-1 bg-gray-700 rounded-full"></div>
-                   ))}
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="5"
-                  value={difficulty}
-                  onChange={(e) => setDifficulty(Number(e.target.value))}
-                  className="w-full h-2 bg-transparent appearance-none cursor-pointer outline-none relative z-10 custom-slider"
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={startGame}
-              className="w-full relative py-4 bg-cyan-950/30 text-cyan-400 hover:text-white transition-all duration-300 font-bold uppercase tracking-[0.3em] text-lg group overflow-hidden border border-cyan-500/30 hover:border-cyan-400"
-            >
-              <div className="absolute inset-0 bg-cyan-500 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-in-out opacity-20"></div>
-              <span className="relative z-10 flex items-center justify-center gap-2">
-                Execute <span className="group-hover:translate-x-2 transition-transform duration-300">{'>>'}</span>
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* 배경 및 슬라이더 커스텀 CSS */}
-        <style dangerouslySetInnerHTML={{__html: `
-          @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Orbitron:wght@500;700;900&display=swap');
-          
-          .bg-cyber-grid {
+        .bg-cyber-grid {
             background-image: 
-              linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
+                linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
             background-size: 40px 40px;
             background-position: center center;
-          }
-          .custom-slider::-webkit-slider-thumb {
+        }
+
+        .custom-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
             width: 20px;
@@ -319,235 +34,515 @@ export default function App() {
             box-shadow: 0 0 15px #00ffff;
             transition: transform 0.1s, background 0.3s;
             clip-path: polygon(0 10%, 100% 0, 100% 90%, 0 100%);
-          }
-          .custom-slider::-webkit-slider-thumb:hover {
+        }
+        .custom-slider::-webkit-slider-thumb:hover {
             transform: scale(1.1);
             background: #ffffff;
-          }
-        `}} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col md:flex-row h-screen w-full bg-[#05050a] text-gray-200 font-mono overflow-hidden bg-cyber-grid relative">
-      
-      {/* 왼쪽: 메인 게임 보드 */}
-      <div className="flex-1 flex flex-col items-center justify-center relative p-4">
-        {/* 네온 배경 효과 */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/5 blur-[120px] rounded-full pointer-events-none"></div>
-
-        <div className="absolute top-8 left-8 flex flex-col gap-1 opacity-70 pointer-events-none">
-          <div className="w-16 h-1 bg-cyan-800"></div>
-          <div className="w-8 h-1 bg-cyan-800"></div>
-          <p className="text-cyan-800 text-xs mt-1 tracking-widest font-bold">SECURE_SECTOR // 7x7</p>
-        </div>
-
-        {/* 터미널 토글 버튼 */}
-        <button 
-          onClick={() => setIsTerminalOpen(!isTerminalOpen)}
-          className="absolute top-6 right-6 z-30 px-3 py-1 border border-cyan-900/50 bg-[#080810]/80 text-cyan-500 text-xs font-bold tracking-widest hover:bg-cyan-900/40 hover:text-cyan-300 transition-colors flex items-center gap-2 backdrop-blur-sm"
-        >
-          <span className={`w-2 h-2 ${isTerminalOpen ? 'bg-cyan-500' : 'bg-gray-600'} rounded-sm`}></span>
-          {isTerminalOpen ? 'HIDE_LOG' : 'SHOW_LOG'}
-        </button>
-
-        <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-500 to-gray-300 mb-8 tracking-[0.4em] uppercase opacity-50" style={{ fontFamily: "'Orbitron', sans-serif" }}>
-          Hexa-Core Conquest
-        </h1>
-
-        <div className="relative w-full max-w-[600px] aspect-square">
-          <svg viewBox="-250 -250 500 500" className="w-full h-full overflow-visible">
-            {/* SVG 필터 (네온 글로우) */}
-            <defs>
-              <filter id="glow-user" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="6" result="coloredBlur" />
-                <feMerge>
-                  <feMergeNode in="coloredBlur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              <filter id="glow-robot" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="6" result="coloredBlur" />
-                <feMerge>
-                  <feMergeNode in="coloredBlur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
-
-            {/* 보드 타일 렌더링 */}
-            {Object.entries(board).map(([coord, owner]) => {
-              const [q, r] = coord.split(',').map(Number);
-              
-              // Axial -> Pixel (Pointy top)
-              const x = HEX_SIZE * Math.sqrt(3) * (q + r / 2);
-              const y = HEX_SIZE * (3 / 2) * r;
-
-              let fill = 'rgba(10, 10, 20, 0.6)';
-              let stroke = '#1e1e2f';
-              let innerFill = 'none';
-              let filter = '';
-              let cursor = 'cursor-pointer';
-              let isHoverable = true;
-
-              if (owner === 'user') {
-                fill = 'rgba(0, 255, 255, 0.1)';
-                stroke = '#008888';
-                innerFill = '#00ffff';
-                filter = 'url(#glow-user)';
-                cursor = 'cursor-default';
-                isHoverable = false;
-              } else if (owner === 'robot') {
-                fill = 'rgba(255, 100, 0, 0.1)';
-                stroke = '#883300';
-                innerFill = '#ff6400';
-                filter = 'url(#glow-robot)';
-                cursor = 'cursor-default';
-                isHoverable = false;
-              }
-
-              return (
-                <g key={coord} transform={`translate(${x}, ${y})`} className="group" onClick={() => handleTileClick(q, r)}>
-                  {/* 외곽선 육각형 (프레임) */}
-                  <polygon
-                    points={HEX_POINTS}
-                    fill={fill}
-                    stroke={stroke}
-                    strokeWidth="1.5"
-                    className={`transition-all duration-300 ${cursor} ${isHoverable && turn === 'user' ? 'group-hover:stroke-cyan-500 group-hover:fill-cyan-900/20' : ''}`}
-                  />
-                  
-                  {/* 중앙 코어 (점령 시 활성화) */}
-                  {owner ? (
-                    <polygon
-                      points={INNER_HEX_POINTS}
-                      fill={innerFill}
-                      filter={filter}
-                      className="transition-all duration-500"
-                    />
-                  ) : (
-                    <circle cx="0" cy="0" r="1.5" fill="#2a2a4a" className={`${isHoverable && turn === 'user' ? 'group-hover:fill-cyan-400' : ''} transition-colors`} />
-                  )}
-                </g>
-              );
-            })}
-          </svg>
-        </div>
-
-        {/* 결과 표시 오버레이 */}
-        {winner && (
-          <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center backdrop-blur-md z-20">
-            <div className="absolute top-0 w-full h-1 bg-gradient-to-r from-transparent via-white to-transparent opacity-50"></div>
-            <div className="absolute bottom-0 w-full h-1 bg-gradient-to-r from-transparent via-white to-transparent opacity-50"></div>
-            
-            <p className="text-gray-400 tracking-[0.5em] text-sm mb-4 font-bold">SYSTEM OVERRIDE DETECTED</p>
-            <h2 className={`text-5xl md:text-7xl font-black mb-10 tracking-wider ${winner === 'user' ? 'text-cyan-400 drop-shadow-[0_0_20px_#00ffff]' : winner === 'robot' ? 'text-orange-500 drop-shadow-[0_0_20px_#ff6400]' : 'text-gray-400'}`}>
-              {winner === 'user' ? 'ACCESS GRANTED' : winner === 'robot' ? 'ACCESS DENIED' : 'DRAW MATCH'}
-            </h2>
-            <div className="flex gap-6">
-              <button 
-                onClick={initBoard}
-                className="px-8 py-3 bg-cyan-500/10 border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-black transition-all duration-300 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(0,255,255,0.2)] hover:shadow-[0_0_25px_rgba(0,255,255,0.6)]"
-              >
-                Reboot Board
-              </button>
-              <button 
-                onClick={() => { setGameState('menu'); setIsTerminalOpen(true); }}
-                className="px-8 py-3 bg-gray-800/30 border border-gray-600 text-gray-300 hover:bg-gray-600 hover:text-white transition-all duration-300 font-bold uppercase tracking-[0.2em]"
-              >
-                Exit Terminal
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 오른쪽: 시스템 로그 패널 (토글로 숨김 가능) */}
-      {isTerminalOpen && (
-        <div className="w-full md:w-80 md:h-full h-64 border-t md:border-t-0 md:border-l border-cyan-900/50 bg-[#080810]/95 p-5 flex flex-col relative overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] z-10 animate-[fadeInRight_0.3s_ease-out]">
-          {/* CRT 스캔라인 오버레이 */}
-          <div className="absolute inset-0 scanlines pointer-events-none opacity-40"></div>
-          
-          <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-80"></div>
-        <div className="flex items-center justify-between border-b border-cyan-900/50 pb-3 mb-4">
-          <h3 className="text-cyan-400 font-bold flex items-center gap-2 tracking-widest text-sm">
-            <div className="w-2 h-2 bg-cyan-400 rounded-sm animate-pulse shadow-[0_0_8px_#00ffff]"></div>
-            TERMINAL_LOG
-          </h3>
-          <span className="text-[10px] text-gray-600 font-bold">v1.0.4</span>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto space-y-2 text-xs md:text-sm pr-2 custom-scrollbar relative z-10 font-mono">
-          {logs.map((log, idx) => (
-            <div 
-              key={idx} 
-              className={`opacity-0 animate-[fadeIn_0.2s_ease-out_forwards] leading-relaxed ${
-                log.includes('USER') ? 'text-cyan-300 drop-shadow-[0_0_2px_rgba(0,255,255,0.5)]' : 
-                log.includes('ROBOT') ? 'text-orange-400 drop-shadow-[0_0_2px_rgba(255,100,0,0.5)]' : 
-                log.includes('!!!') ? 'text-red-400 font-bold bg-red-900/20 px-1 inline-block' : 'text-gray-500'
-              }`}
-            >
-              <span className="opacity-40 text-xs mr-2">{'>'}</span>
-              {log}
-            </div>
-          ))}
-          <div ref={logsEndRef} />
-        </div>
-
-        {/* 현재 턴 상태 표시 */}
-        <div className="mt-4 p-4 border border-cyan-900/50 bg-black/60 flex flex-col gap-1 relative z-10 backdrop-blur-sm">
-          <div className="flex justify-between items-center w-full mb-1">
-            <span className="text-gray-500 text-[10px] uppercase tracking-[0.2em] font-bold">Sys.Status</span>
-            <span className="flex gap-1">
-              <span className={`block w-1.5 h-1.5 rounded-full ${turn === 'user' ? 'bg-cyan-500 animate-ping' : 'bg-gray-700'}`}></span>
-              <span className={`block w-1.5 h-1.5 rounded-full ${turn === 'robot' ? 'bg-orange-500 animate-ping' : 'bg-gray-700'}`}></span>
-            </span>
-          </div>
-          <span className={`font-black text-sm tracking-widest uppercase ${turn === 'user' ? 'text-cyan-400 drop-shadow-[0_0_5px_#00ffff]' : 'text-orange-500 drop-shadow-[0_0_5px_#ff6400]'}`}>
-            {turn === 'user' ? 'Awaiting Input_' : 'Calculating...'}
-          </span>
-        </div>
-      </div>
-      )}
-
-      {/* CSS 애니메이션 추가 */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Orbitron:wght@500;700;900&display=swap');
-        
-        .bg-cyber-grid {
-          background-image: 
-            linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px);
-          background-size: 40px 40px;
-          background-position: center center;
         }
+
         .scanlines {
-          background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.3));
-          background-size: 100% 4px;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.3));
+            background-size: 100% 4px;
         }
+
         @keyframes fadeIn {
-          from { opacity: 0; transform: translateX(-5px); }
-          to { opacity: 1; transform: translateX(0); }
+            from { opacity: 0; transform: translateX(-5px); }
+            to { opacity: 1; transform: translateX(0); }
         }
         @keyframes fadeInRight {
-          from { opacity: 0; transform: translateX(20px); }
-          to { opacity: 1; transform: translateX(0); }
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
         }
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(0,0,0,0.2);
-        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(0, 255, 255, 0.3);
-          border-radius: 4px;
+            background: rgba(0, 255, 255, 0.3);
+            border-radius: 4px;
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(0, 255, 255, 0.6);
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 255, 255, 0.6); }
+
+        .animate-fadeIn { animation: fadeIn 0.2s ease-out forwards; }
+        .animate-fadeInRight { animation: fadeInRight 0.3s ease-out; }
+        
+        /* 유저 턴일 때만 hover 효과 적용을 위한 클래스 */
+        .user-turn .hex-group:hover polygon {
+            stroke: #06b6d4; /* cyan-500 */
+            fill: rgba(8, 145, 178, 0.2); /* cyan-900/20 */
         }
-      `}} />
+        .user-turn .hex-group:hover circle {
+            fill: #22d3ee; /* cyan-400 */
+        }
+    </style>
+</head>
+<body class="bg-[#05050a] text-gray-200 font-mono overflow-hidden">
+
+    <!-- === 메인 메뉴 화면 === -->
+    <div id="menu-screen" class="flex flex-col items-center justify-center h-screen w-full relative overflow-hidden bg-cyber-grid">
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/10 blur-[150px] rounded-full pointer-events-none"></div>
+        
+        <div class="relative z-10 flex flex-col items-center">
+            <p class="text-cyan-500/50 tracking-[0.5em] text-sm mb-2 font-bold animate-pulse">PROTOCOL: INITIATION</p>
+            <h1 class="font-orbitron text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-blue-600 mb-16 tracking-widest uppercase drop-shadow-[0_0_25px_rgba(0,255,255,0.4)] text-center">
+                Hexa-Core
+                <span class="block text-3xl md:text-5xl text-gray-100 mt-2 tracking-[0.3em] drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">Conquest</span>
+            </h1>
+        </div>
+
+        <div class="w-full max-w-md bg-black/40 p-1 relative shadow-[0_0_50px_rgba(0,0,0,1)] backdrop-blur-md z-10 border border-cyan-900/30">
+            <div class="absolute -top-1 -left-1 w-6 h-6 border-t-2 border-l-2 border-cyan-500"></div>
+            <div class="absolute -top-1 -right-1 w-6 h-6 border-t-2 border-r-2 border-cyan-500"></div>
+            <div class="absolute -bottom-1 -left-1 w-6 h-6 border-b-2 border-l-2 border-cyan-500"></div>
+            <div class="absolute -bottom-1 -right-1 w-6 h-6 border-b-2 border-r-2 border-cyan-500"></div>
+            
+            <div class="bg-[#0a0a12]/90 p-8 border border-gray-800/50 h-full w-full">
+                <h2 class="text-sm text-center mb-10 text-cyan-600 font-bold tracking-[0.4em] flex items-center justify-center gap-3">
+                    <span class="w-12 h-[1px] bg-gradient-to-r from-transparent to-cyan-600"></span>
+                    SYS.DIFFICULTY
+                    <span class="w-12 h-[1px] bg-gradient-to-l from-transparent to-cyan-600"></span>
+                </h2>
+
+                <div class="flex flex-col items-center gap-8 mb-12">
+                    <span id="difficulty-text" class="font-black-han text-5xl md:text-6xl transition-all duration-300 text-indigo-400 drop-shadow-[0_0_10px_rgba(129,140,248,0.8)]">보통</span>
+                    
+                    <div class="w-full relative px-2 mt-4">
+                        <div class="absolute top-1/2 left-0 w-full h-1 -translate-y-1/2 bg-gray-900 flex justify-between px-2">
+                             <div class="w-1 h-1 bg-gray-700 rounded-full"></div>
+                             <div class="w-1 h-1 bg-gray-700 rounded-full"></div>
+                             <div class="w-1 h-1 bg-gray-700 rounded-full"></div>
+                             <div class="w-1 h-1 bg-gray-700 rounded-full"></div>
+                             <div class="w-1 h-1 bg-gray-700 rounded-full"></div>
+                             <div class="w-1 h-1 bg-gray-700 rounded-full"></div>
+                        </div>
+                        <input type="range" id="difficulty-slider" min="0" max="5" value="2" oninput="updateDifficulty()" class="w-full h-2 bg-transparent appearance-none cursor-pointer outline-none relative z-10 custom-slider" />
+                    </div>
+                </div>
+
+                <button onclick="startGame()" class="w-full relative py-4 bg-cyan-950/30 text-cyan-400 hover:text-white transition-all duration-300 font-bold uppercase tracking-[0.3em] text-lg group overflow-hidden border border-cyan-500/30 hover:border-cyan-400">
+                    <div class="absolute inset-0 bg-cyan-500 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-in-out opacity-20"></div>
+                    <span class="relative z-10 flex items-center justify-center gap-2">
+                        Execute <span class="group-hover:translate-x-2 transition-transform duration-300">&gt;&gt;</span>
+                    </span>
+                </button>
+            </div>
+        </div>
     </div>
-  );
-}
+
+    <!-- === 게임 플레이 화면 === -->
+    <div id="game-screen" class="hidden flex-col md:flex-row h-screen w-full bg-[#05050a] text-gray-200 font-mono overflow-hidden bg-cyber-grid relative">
+        
+        <!-- 왼쪽: 게임 보드 -->
+        <div class="flex-1 flex flex-col items-center justify-center relative p-4" id="board-container">
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/5 blur-[120px] rounded-full pointer-events-none"></div>
+
+            <div class="absolute top-8 left-8 flex flex-col gap-1 opacity-70 pointer-events-none">
+                <div class="w-16 h-1 bg-cyan-800"></div>
+                <div class="w-8 h-1 bg-cyan-800"></div>
+                <p class="text-cyan-800 text-xs mt-1 tracking-widest font-bold">SECURE_SECTOR // 7x7</p>
+            </div>
+
+            <button onclick="toggleTerminal()" id="toggle-term-btn" class="absolute top-6 right-6 z-30 px-3 py-1 border border-cyan-900/50 bg-[#080810]/80 text-cyan-500 text-xs font-bold tracking-widest hover:bg-cyan-900/40 hover:text-cyan-300 transition-colors flex items-center gap-2 backdrop-blur-sm">
+                <span id="toggle-indicator" class="w-2 h-2 bg-cyan-500 rounded-sm"></span>
+                <span id="toggle-text">HIDE_LOG</span>
+            </button>
+
+            <h1 class="font-orbitron text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-500 to-gray-300 mb-8 tracking-[0.4em] uppercase opacity-50">
+                Hexa-Core Conquest
+            </h1>
+
+            <div class="relative w-full max-w-[600px] aspect-square">
+                <svg id="svg-board" viewBox="-250 -250 500 500" class="w-full h-full overflow-visible">
+                    <defs>
+                        <filter id="glow-user" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+                            <feMerge>
+                                <feMergeNode in="coloredBlur" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                        <filter id="glow-robot" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+                            <feMerge>
+                                <feMergeNode in="coloredBlur" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                    </defs>
+                    <g id="hex-grid-container"></g>
+                </svg>
+            </div>
+
+            <!-- 결과 오버레이 -->
+            <div id="winner-overlay" class="hidden absolute inset-0 bg-black/85 flex-col items-center justify-center backdrop-blur-md z-20">
+                <div class="absolute top-0 w-full h-1 bg-gradient-to-r from-transparent via-white to-transparent opacity-50"></div>
+                <div class="absolute bottom-0 w-full h-1 bg-gradient-to-r from-transparent via-white to-transparent opacity-50"></div>
+                
+                <p class="text-gray-400 tracking-[0.5em] text-sm mb-4 font-bold">SYSTEM OVERRIDE DETECTED</p>
+                <h2 id="winner-text" class="text-5xl md:text-7xl font-black mb-10 tracking-wider"></h2>
+                
+                <div class="flex gap-6">
+                    <button onclick="startGame()" class="px-8 py-3 bg-cyan-500/10 border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-black transition-all duration-300 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(0,255,255,0.2)] hover:shadow-[0_0_25px_rgba(0,255,255,0.6)]">
+                        Reboot Board
+                    </button>
+                    <button onclick="exitTerminal()" class="px-8 py-3 bg-gray-800/30 border border-gray-600 text-gray-300 hover:bg-gray-600 hover:text-white transition-all duration-300 font-bold uppercase tracking-[0.2em]">
+                        Exit Terminal
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 오른쪽: 시스템 로그 터미널 -->
+        <div id="terminal-panel" class="w-full md:w-80 md:h-full h-64 border-t md:border-t-0 md:border-l border-cyan-900/50 bg-[#080810]/95 p-5 flex flex-col relative overflow-hidden shadow-[-10px_0_30px_rgba(0,0,0,0.5)] z-10 animate-fadeInRight">
+            <div class="absolute inset-0 scanlines pointer-events-none opacity-40"></div>
+            <div class="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-80"></div>
+            
+            <div class="flex items-center justify-between border-b border-cyan-900/50 pb-3 mb-4">
+                <h3 class="text-cyan-400 font-bold flex items-center gap-2 tracking-widest text-sm">
+                    <div class="w-2 h-2 bg-cyan-400 rounded-sm animate-pulse shadow-[0_0_8px_#00ffff]"></div>
+                    TERMINAL_LOG
+                </h3>
+                <span class="text-[10px] text-gray-600 font-bold">v1.0.4</span>
+            </div>
+            
+            <div id="terminal-logs" class="flex-1 overflow-y-auto space-y-2 text-xs md:text-sm pr-2 custom-scrollbar relative z-10 font-mono">
+                <!-- 로그 출력 영역 -->
+            </div>
+
+            <!-- 현재 턴 상태 표시 -->
+            <div class="mt-4 p-4 border border-cyan-900/50 bg-black/60 flex flex-col gap-1 relative z-10 backdrop-blur-sm">
+                <div class="flex justify-between items-center w-full mb-1">
+                    <span class="text-gray-500 text-[10px] uppercase tracking-[0.2em] font-bold">Sys.Status</span>
+                    <span class="flex gap-1">
+                        <span id="status-user-dot" class="block w-1.5 h-1.5 rounded-full bg-cyan-500 animate-ping"></span>
+                        <span id="status-robot-dot" class="block w-1.5 h-1.5 rounded-full bg-gray-700"></span>
+                    </span>
+                </div>
+                <span id="status-text" class="font-black text-sm tracking-widest uppercase text-cyan-400 drop-shadow-[0_0_5px_#00ffff]">
+                    Awaiting Input_
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- === 게임 로직 (Vanilla JS) === -->
+    <script>
+        // --- 상수 및 설정 ---
+        const BOARD_RADIUS = 4;
+        const HEX_SIZE = 22;
+        const WIN_CONDITION = 5;
+        const AXES = [[1, 0], [0, 1], [1, -1]];
+        
+        const DIFFICULTY_LEVELS = ['매우 쉬움', '쉬움', '보통', '어려움', '매우 어려움', '극악'];
+        const DIFF_COLORS = [
+            'text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]',
+            'text-blue-400 drop-shadow-[0_0_10px_rgba(96,165,250,0.8)]',
+            'text-indigo-400 drop-shadow-[0_0_10px_rgba(129,140,248,0.8)]',
+            'text-fuchsia-400 drop-shadow-[0_0_10px_rgba(232,121,249,0.8)]',
+            'text-rose-500 drop-shadow-[0_0_10px_rgba(244,63,94,0.8)]',
+            'text-red-600 drop-shadow-[0_0_15px_rgba(220,38,38,1)] animate-pulse'
+        ];
+
+        function getHexPoints(size) {
+            const points = [];
+            for (let i = 0; i < 6; i++) {
+                const angle_rad = (Math.PI / 180) * (60 * i - 30);
+                points.push(`${size * Math.cos(angle_rad)},${size * Math.sin(angle_rad)}`);
+            }
+            return points.join(' ');
+        }
+        const HEX_POINTS = getHexPoints(HEX_SIZE - 1);
+        const INNER_HEX_POINTS = getHexPoints(HEX_SIZE * 0.45);
+
+        // --- 전역 상태 변수 ---
+        let difficulty = 2;
+        let board = {};
+        let turn = 'user';
+        let winner = null;
+        let logs = [];
+        let isTerminalOpen = true;
+
+        // --- DOM 엘리먼트 ---
+        const uiMenuScreen = document.getElementById('menu-screen');
+        const uiGameScreen = document.getElementById('game-screen');
+        const uiDiffText = document.getElementById('difficulty-text');
+        const uiDiffSlider = document.getElementById('difficulty-slider');
+        const uiGridContainer = document.getElementById('hex-grid-container');
+        const uiBoardContainer = document.getElementById('board-container');
+        const uiLogs = document.getElementById('terminal-logs');
+        const uiStatusUserDot = document.getElementById('status-user-dot');
+        const uiStatusRobotDot = document.getElementById('status-robot-dot');
+        const uiStatusText = document.getElementById('status-text');
+        const uiWinnerOverlay = document.getElementById('winner-overlay');
+        const uiWinnerText = document.getElementById('winner-text');
+        const uiTermPanel = document.getElementById('terminal-panel');
+        const uiToggleIndicator = document.getElementById('toggle-indicator');
+        const uiToggleText = document.getElementById('toggle-text');
+
+        // --- 초기화 및 UI 렌더링 ---
+        function updateDifficulty() {
+            difficulty = parseInt(uiDiffSlider.value);
+            uiDiffText.innerText = DIFFICULTY_LEVELS[difficulty];
+            // 색상 클래스 재할당 (기존 색상 제거 후 새 색상 추가)
+            uiDiffText.className = `font-black-han text-5xl md:text-6xl transition-all duration-300 ${DIFF_COLORS[difficulty]}`;
+        }
+
+        function initBoard() {
+            board = {};
+            for (let q = -BOARD_RADIUS; q <= BOARD_RADIUS; q++) {
+                for (let r = -BOARD_RADIUS; r <= BOARD_RADIUS; r++) {
+                    if (Math.abs(q + r) <= BOARD_RADIUS) {
+                        board[`${q},${r}`] = null;
+                    }
+                }
+            }
+            winner = null;
+            turn = 'user';
+            renderBoard();
+            renderStatus();
+            uiWinnerOverlay.style.display = 'none';
+        }
+
+        function startGame() {
+            uiMenuScreen.style.display = 'none';
+            uiGameScreen.style.display = 'flex';
+            
+            initBoard();
+            logs = [];
+            addLog('[SYSTEM] Hexa-Core Conquest 시스템 부팅 완료.');
+            addLog(`[SYSTEM] 전투 인스턴스 생성 중...`);
+            addLog(`[SYSTEM] 설정된 난이도: [${DIFFICULTY_LEVELS[difficulty]}]`);
+            addLog('[SYSTEM] 유저(Cyan) 턴 대기 중.');
+        }
+
+        function exitTerminal() {
+            uiGameScreen.style.display = 'none';
+            uiMenuScreen.style.display = 'flex';
+            if(!isTerminalOpen) toggleTerminal(); // 터미널 닫혀있으면 다시 열기
+        }
+
+        function toggleTerminal() {
+            isTerminalOpen = !isTerminalOpen;
+            if (isTerminalOpen) {
+                uiTermPanel.style.display = 'flex';
+                uiToggleIndicator.className = 'w-2 h-2 bg-cyan-500 rounded-sm';
+                uiToggleText.innerText = 'HIDE_LOG';
+            } else {
+                uiTermPanel.style.display = 'none';
+                uiToggleIndicator.className = 'w-2 h-2 bg-gray-600 rounded-sm';
+                uiToggleText.innerText = 'SHOW_LOG';
+            }
+        }
+
+        function addLog(msg) {
+            logs.push(msg);
+            renderLogs();
+        }
+
+        function renderLogs() {
+            uiLogs.innerHTML = logs.map(log => {
+                let colorClass = 'text-gray-500';
+                if (log.includes('USER')) colorClass = 'text-cyan-300 drop-shadow-[0_0_2px_rgba(0,255,255,0.5)]';
+                else if (log.includes('ROBOT')) colorClass = 'text-orange-400 drop-shadow-[0_0_2px_rgba(255,100,0,0.5)]';
+                else if (log.includes('!!!')) colorClass = 'text-red-400 font-bold bg-red-900/20 px-1 inline-block';
+
+                return `<div class="animate-fadeIn leading-relaxed ${colorClass}">
+                    <span class="opacity-40 text-xs mr-2">&gt;</span>${log}
+                </div>`;
+            }).join('');
+            uiLogs.scrollTop = uiLogs.scrollHeight;
+        }
+
+        function renderStatus() {
+            if (turn === 'user') {
+                uiBoardContainer.classList.add('user-turn');
+                uiStatusUserDot.className = 'block w-1.5 h-1.5 rounded-full bg-cyan-500 animate-ping';
+                uiStatusRobotDot.className = 'block w-1.5 h-1.5 rounded-full bg-gray-700';
+                uiStatusText.className = 'font-black text-sm tracking-widest uppercase text-cyan-400 drop-shadow-[0_0_5px_#00ffff]';
+                uiStatusText.innerText = 'Awaiting Input_';
+            } else {
+                uiBoardContainer.classList.remove('user-turn');
+                uiStatusUserDot.className = 'block w-1.5 h-1.5 rounded-full bg-gray-700';
+                uiStatusRobotDot.className = 'block w-1.5 h-1.5 rounded-full bg-orange-500 animate-ping';
+                uiStatusText.className = 'font-black text-sm tracking-widest uppercase text-orange-500 drop-shadow-[0_0_5px_#ff6400]';
+                uiStatusText.innerText = 'Calculating...';
+            }
+        }
+
+        function renderBoard() {
+            let html = '';
+            for (const [coord, owner] of Object.entries(board)) {
+                const [q, r] = coord.split(',').map(Number);
+                const x = HEX_SIZE * Math.sqrt(3) * (q + r / 2);
+                const y = HEX_SIZE * (3 / 2) * r;
+
+                let fill = 'rgba(10, 10, 20, 0.6)';
+                let stroke = '#1e1e2f';
+                let innerFill = 'none';
+                let filter = '';
+                let cursor = 'cursor-pointer';
+                let isHoverable = (!owner && turn === 'user' && !winner);
+
+                if (owner === 'user') {
+                    fill = 'rgba(0, 255, 255, 0.1)'; stroke = '#008888';
+                    innerFill = '#00ffff'; filter = 'url(#glow-user)'; cursor = 'cursor-default';
+                } else if (owner === 'robot') {
+                    fill = 'rgba(255, 100, 0, 0.1)'; stroke = '#883300';
+                    innerFill = '#ff6400'; filter = 'url(#glow-robot)'; cursor = 'cursor-default';
+                }
+
+                // 이벤트 부착을 위해 string literal 생성 (onClick 대신 인라인 onclick 사용)
+                let clickAttr = isHoverable ? `onclick="handleTileClick(${q}, ${r})"` : '';
+                let groupClass = `hex-group transition-all duration-300 ${cursor}`;
+
+                let innerShape = owner 
+                    ? `<polygon points="${INNER_HEX_POINTS}" fill="${innerFill}" filter="${filter}" class="transition-all duration-500" />`
+                    : `<circle cx="0" cy="0" r="1.5" fill="#2a2a4a" class="transition-colors" />`;
+
+                html += `
+                    <g transform="translate(${x}, ${y})" class="${groupClass}" ${clickAttr}>
+                        <polygon points="${HEX_POINTS}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" class="transition-all duration-300" />
+                        ${innerShape}
+                    </g>
+                `;
+            }
+            uiGridContainer.innerHTML = html;
+        }
+
+        // --- 핵심 로직 (승리 판정 및 AI) ---
+        function checkWin(currentBoard, q, r, player) {
+            for (let [dq, dr] of AXES) {
+                let count = 1;
+                let nq = q + dq, nr = r + dr;
+                while (currentBoard[`${nq},${nr}`] === player) { count++; nq += dq; nr += dr; }
+                nq = q - dq; nr = r - dr;
+                while (currentBoard[`${nq},${nr}`] === player) { count++; nq -= dq; nr -= dr; }
+                if (count >= WIN_CONDITION) return true;
+            }
+            return false;
+        }
+
+        function getLineLength(b, q, r, dq, dr, player) {
+            let count = 0;
+            let nq = q + dq, nr = r + dr;
+            while (b[`${nq},${nr}`] === player) { count++; nq += dq; nr += dr; }
+            return count;
+        }
+
+        function evaluateMove(b, q, r) {
+            let score = 0;
+            score += (10 - (Math.abs(q) + Math.abs(r) + Math.abs(q + r)) / 2);
+
+            for (let [dq, dr] of AXES) {
+                let rTotal = getLineLength(b, q, r, dq, dr, 'robot') + getLineLength(b, q, r, -dq, -dr, 'robot') + 1;
+                let uTotal = getLineLength(b, q, r, dq, dr, 'user') + getLineLength(b, q, r, -dq, -dr, 'user') + 1;
+
+                if (rTotal >= 5) score += 100000;
+                else if (rTotal === 4) score += 10000;
+                else if (rTotal === 3) score += 100;
+                else if (rTotal === 2) score += 10;
+
+                if (uTotal >= 5) score += 50000;
+                else if (uTotal === 4) score += 5000;
+                else if (uTotal === 3) score += 50;
+                else if (uTotal === 2) score += 5;
+            }
+            return score;
+        }
+
+        function getAIMove() {
+            const emptyCoords = Object.keys(board).filter(key => board[key] === null);
+            if (emptyCoords.length === 0) return null;
+
+            const randomChances = [1.0, 0.7, 0.4, 0.15, 0.0, 0.0];
+            if (Math.random() < randomChances[difficulty]) {
+                return emptyCoords[Math.floor(Math.random() * emptyCoords.length)];
+            }
+
+            let bestScore = -1;
+            let bestMoves = [];
+
+            emptyCoords.forEach(coord => {
+                const [q, r] = coord.split(',').map(Number);
+                let score = evaluateMove(board, q, r);
+                
+                if (difficulty !== 5) score += Math.random() * (5 - difficulty);
+                else score += Math.random() * 0.1;
+
+                if (score > bestScore) {
+                    bestScore = score; bestMoves = [coord];
+                } else if (Math.floor(score) === Math.floor(bestScore)) {
+                    bestMoves.push(coord);
+                }
+            });
+
+            return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+        }
+
+        // --- 상호작용 및 턴 관리 ---
+        function handleTileClick(q, r) {
+            if (winner || turn !== 'user' || board[`${q},${r}`]) return;
+
+            board[`${q},${r}`] = 'user';
+            addLog(`[USER] 좌표 [${q}, ${r}] 점령 완료.`);
+
+            if (checkWin(board, q, r, 'user')) {
+                endGame('user');
+            } else {
+                turn = 'robot';
+                renderBoard();
+                renderStatus();
+                processRobotTurn();
+            }
+        }
+
+        function processRobotTurn() {
+            addLog('[ROBOT] 최적의 경로 분석 중...');
+            
+            setTimeout(() => {
+                const targetCoord = getAIMove();
+                
+                if (!targetCoord) {
+                    endGame('draw');
+                    return;
+                }
+
+                const [q, r] = targetCoord.split(',').map(Number);
+                board[`${q},${r}`] = 'robot';
+                addLog(`[ROBOT] 카운터 프로토콜 가동. 좌표 [${q}, ${r}] 방어 구축.`);
+
+                if (checkWin(board, q, r, 'robot')) {
+                    endGame('robot');
+                } else {
+                    turn = 'user';
+                    renderBoard();
+                    renderStatus();
+                }
+            }, 800);
+        }
+
+        function endGame(result) {
+            winner = result;
+            renderBoard();
+            
+            if(result === 'user') {
+                addLog('!!! [SYSTEM] 유저 승리! 코어 해킹에 성공했습니다. !!!');
+                uiWinnerText.className = 'text-5xl md:text-7xl font-black mb-10 tracking-wider text-cyan-400 drop-shadow-[0_0_20px_#00ffff]';
+                uiWinnerText.innerText = 'ACCESS GRANTED';
+            } else if (result === 'robot') {
+                addLog('!!! [SYSTEM] 로봇 승리. 방화벽에 의해 차단되었습니다. !!!');
+                uiWinnerText.className = 'text-5xl md:text-7xl font-black mb-10 tracking-wider text-orange-500 drop-shadow-[0_0_20px_#ff6400]';
+                uiWinnerText.innerText = 'ACCESS DENIED';
+            } else {
+                addLog('[SYSTEM] 더 이상 공간이 없습니다. 무승부입니다.');
+                uiWinnerText.className = 'text-5xl md:text-7xl font-black mb-10 tracking-wider text-gray-400';
+                uiWinnerText.innerText = 'DRAW MATCH';
+            }
+            
+            uiWinnerOverlay.style.display = 'flex';
+        }
+
+        // --- 최초 실행 ---
+        updateDifficulty(); // 난이도 초기 렌더링
+    </script>
+</body>
+</html>
