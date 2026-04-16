@@ -73,12 +73,65 @@
         .user-turn .hex-group:hover circle {
             fill: #22d3ee; /* cyan-400 */
         }
+        
+        /* 1:1 대전 시 플레이어 2(오렌지) 턴일 때 hover 효과 */
+        .p2-turn .hex-group:hover polygon {
+            stroke: #f97316; /* orange-500 */
+            fill: rgba(234, 88, 12, 0.2); /* orange-600/20 */
+        }
+        .p2-turn .hex-group:hover circle {
+            fill: #fb923c; /* orange-400 */
+        }
     </style>
 </head>
 <body class="bg-[#05050a] text-gray-200 font-mono overflow-hidden">
 
-    <!-- === 메인 메뉴 화면 === -->
-    <div id="menu-screen" class="flex flex-col items-center justify-center h-screen w-full relative overflow-hidden bg-cyber-grid">
+    <!-- === 모드 선택 화면 === -->
+    <div id="mode-screen" class="flex flex-col items-center justify-center h-screen w-full relative overflow-hidden bg-cyber-grid">
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/10 blur-[150px] rounded-full pointer-events-none"></div>
+        
+        <div class="relative z-10 flex flex-col items-center">
+            <p class="text-cyan-500/50 tracking-[0.5em] text-sm mb-2 font-bold animate-pulse">PROTOCOL: INITIATION</p>
+            <h1 class="font-orbitron text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-blue-600 mb-16 tracking-widest uppercase drop-shadow-[0_0_25px_rgba(0,255,255,0.4)] text-center">
+                Hexa-Core
+                <span class="block text-3xl md:text-5xl text-gray-100 mt-2 tracking-[0.3em] drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">Conquest</span>
+            </h1>
+        </div>
+
+        <div class="w-full max-w-md bg-black/40 p-1 relative shadow-[0_0_50px_rgba(0,0,0,1)] backdrop-blur-md z-10 border border-cyan-900/30">
+            <div class="absolute -top-1 -left-1 w-6 h-6 border-t-2 border-l-2 border-cyan-500"></div>
+            <div class="absolute -top-1 -right-1 w-6 h-6 border-t-2 border-r-2 border-cyan-500"></div>
+            <div class="absolute -bottom-1 -left-1 w-6 h-6 border-b-2 border-l-2 border-cyan-500"></div>
+            <div class="absolute -bottom-1 -right-1 w-6 h-6 border-b-2 border-r-2 border-cyan-500"></div>
+            
+            <div class="bg-[#0a0a12]/90 p-8 border border-gray-800/50 h-full w-full flex flex-col gap-6">
+                <h2 class="text-sm text-center mb-6 text-cyan-600 font-bold tracking-[0.4em] flex items-center justify-center gap-3">
+                    <span class="w-12 h-[1px] bg-gradient-to-r from-transparent to-cyan-600"></span>
+                    SELECT MODE
+                    <span class="w-12 h-[1px] bg-gradient-to-l from-transparent to-cyan-600"></span>
+                </h2>
+
+                <button onclick="selectMode('local')" class="w-full relative py-6 bg-orange-900/20 text-orange-400 hover:text-white transition-all duration-300 font-bold tracking-[0.2em] text-lg group overflow-hidden border border-orange-500/30 hover:border-orange-400 shadow-[0_0_10px_rgba(255,100,0,0.1)] hover:shadow-[0_0_20px_rgba(255,100,0,0.4)]">
+                    <div class="absolute inset-0 bg-orange-500 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-in-out opacity-20"></div>
+                    <span class="relative z-10 flex flex-col items-center justify-center gap-1">
+                        <span class="text-2xl font-black-han text-orange-300 drop-shadow-[0_0_5px_rgba(255,165,0,0.8)]">1 VS 1 대전</span>
+                        <span class="text-xs text-orange-500/70 tracking-widest">LOCAL MULTIPLAYER</span>
+                    </span>
+                </button>
+
+                <button onclick="selectMode('ai')" class="w-full relative py-6 bg-cyan-900/20 text-cyan-400 hover:text-white transition-all duration-300 font-bold tracking-[0.2em] text-lg group overflow-hidden border border-cyan-500/30 hover:border-cyan-400 shadow-[0_0_10px_rgba(0,255,255,0.1)] hover:shadow-[0_0_20px_rgba(0,255,255,0.4)]">
+                    <div class="absolute inset-0 bg-cyan-500 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-in-out opacity-20"></div>
+                    <span class="relative z-10 flex flex-col items-center justify-center gap-1">
+                        <span class="text-2xl font-black-han text-cyan-300 drop-shadow-[0_0_5px_rgba(0,255,255,0.8)]">로봇과 대결</span>
+                        <span class="text-xs text-cyan-500/70 tracking-widest">VS SYSTEM AI</span>
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- === 메인 메뉴 화면 (AI 난이도 선택) === -->
+    <div id="menu-screen" class="hidden flex-col items-center justify-center h-screen w-full relative overflow-hidden bg-cyber-grid">
         <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/10 blur-[150px] rounded-full pointer-events-none"></div>
         
         <div class="relative z-10 flex flex-col items-center">
@@ -130,7 +183,6 @@
 
     <!-- === 게임 플레이 화면 === -->
     <div id="game-screen" class="hidden flex-col md:flex-row h-screen w-full bg-[#05050a] text-gray-200 font-mono overflow-hidden bg-cyber-grid relative">
-        
         <!-- 왼쪽: 게임 보드 -->
         <div class="flex-1 flex flex-col items-center justify-center relative p-4" id="board-container">
             <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/5 blur-[120px] rounded-full pointer-events-none"></div>
@@ -181,7 +233,7 @@
                 <h2 id="winner-text" class="text-5xl md:text-7xl font-black mb-10 tracking-wider"></h2>
                 
                 <div class="flex gap-6">
-                    <button onclick="startGame()" class="px-8 py-3 bg-cyan-500/10 border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-black transition-all duration-300 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(0,255,255,0.2)] hover:shadow-[0_0_25px_rgba(0,255,255,0.6)]">
+                    <button onclick="restartGame()" class="px-8 py-3 bg-cyan-500/10 border border-cyan-500 text-cyan-400 hover:bg-cyan-500 hover:text-black transition-all duration-300 font-bold uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(0,255,255,0.2)] hover:shadow-[0_0_25px_rgba(0,255,255,0.6)]">
                         Reboot Board
                     </button>
                     <button onclick="exitTerminal()" class="px-8 py-3 bg-gray-800/30 border border-gray-600 text-gray-300 hover:bg-gray-600 hover:text-white transition-all duration-300 font-bold uppercase tracking-[0.2em]">
@@ -260,8 +312,10 @@
         let winner = null;
         let logs = [];
         let isTerminalOpen = true;
+        let gameMode = 'ai'; // 'ai' 또는 'local'
 
         // --- DOM 엘리먼트 ---
+        const uiModeScreen = document.getElementById('mode-screen');
         const uiMenuScreen = document.getElementById('menu-screen');
         const uiGameScreen = document.getElementById('game-screen');
         const uiDiffText = document.getElementById('difficulty-text');
@@ -302,6 +356,16 @@
             uiWinnerOverlay.style.display = 'none';
         }
 
+        function selectMode(mode) {
+            gameMode = mode;
+            uiModeScreen.style.display = 'none';
+            if (mode === 'ai') {
+                uiMenuScreen.style.display = 'flex';
+            } else {
+                startGame();
+            }
+        }
+
         function startGame() {
             uiMenuScreen.style.display = 'none';
             uiGameScreen.style.display = 'flex';
@@ -309,14 +373,30 @@
             initBoard();
             logs = [];
             addLog('[SYSTEM] Hexa-Core Conquest 시스템 부팅 완료.');
-            addLog(`[SYSTEM] 전투 인스턴스 생성 중...`);
-            addLog(`[SYSTEM] 설정된 난이도: [${DIFFICULTY_LEVELS[difficulty]}]`);
-            addLog('[SYSTEM] 유저(Cyan) 턴 대기 중.');
+            
+            if (gameMode === 'local') {
+                addLog(`[SYSTEM] 1:1 로컬 대전 모드 활성화.`);
+                addLog('[SYSTEM] Player 1(Cyan) 턴 대기 중.');
+            } else {
+                addLog(`[SYSTEM] 전투 인스턴스 생성 중...`);
+                addLog(`[SYSTEM] 설정된 난이도: [${DIFFICULTY_LEVELS[difficulty]}]`);
+                addLog('[SYSTEM] 유저(Cyan) 턴 대기 중.');
+            }
+        }
+
+        function restartGame() {
+            initBoard();
+            if (gameMode === 'local') {
+                addLog(`[SYSTEM] 1:1 대전 보드 초기화 완료.`);
+            } else {
+                addLog(`[SYSTEM] 보드 초기화 완료. 난이도: [${DIFFICULTY_LEVELS[difficulty]}]`);
+            }
         }
 
         function exitTerminal() {
             uiGameScreen.style.display = 'none';
-            uiMenuScreen.style.display = 'flex';
+            uiMenuScreen.style.display = 'none';
+            uiModeScreen.style.display = 'flex';
             if(!isTerminalOpen) toggleTerminal(); // 터미널 닫혀있으면 다시 열기
         }
 
@@ -341,8 +421,8 @@
         function renderLogs() {
             uiLogs.innerHTML = logs.map(log => {
                 let colorClass = 'text-gray-500';
-                if (log.includes('USER')) colorClass = 'text-cyan-300 drop-shadow-[0_0_2px_rgba(0,255,255,0.5)]';
-                else if (log.includes('ROBOT')) colorClass = 'text-orange-400 drop-shadow-[0_0_2px_rgba(255,100,0,0.5)]';
+                if (log.includes('USER') || log.includes('Player 1')) colorClass = 'text-cyan-300 drop-shadow-[0_0_2px_rgba(0,255,255,0.5)]';
+                else if (log.includes('ROBOT') || log.includes('Player 2')) colorClass = 'text-orange-400 drop-shadow-[0_0_2px_rgba(255,100,0,0.5)]';
                 else if (log.includes('!!!')) colorClass = 'text-red-400 font-bold bg-red-900/20 px-1 inline-block';
 
                 return `<div class="animate-fadeIn leading-relaxed ${colorClass}">
@@ -355,16 +435,18 @@
         function renderStatus() {
             if (turn === 'user') {
                 uiBoardContainer.classList.add('user-turn');
+                uiBoardContainer.classList.remove('p2-turn');
                 uiStatusUserDot.className = 'block w-1.5 h-1.5 rounded-full bg-cyan-500 animate-ping';
                 uiStatusRobotDot.className = 'block w-1.5 h-1.5 rounded-full bg-gray-700';
                 uiStatusText.className = 'font-black text-sm tracking-widest uppercase text-cyan-400 drop-shadow-[0_0_5px_#00ffff]';
-                uiStatusText.innerText = 'Awaiting Input_';
+                uiStatusText.innerText = gameMode === 'local' ? 'Player 1 Turn' : 'Awaiting Input_';
             } else {
                 uiBoardContainer.classList.remove('user-turn');
+                uiBoardContainer.classList.add('p2-turn');
                 uiStatusUserDot.className = 'block w-1.5 h-1.5 rounded-full bg-gray-700';
                 uiStatusRobotDot.className = 'block w-1.5 h-1.5 rounded-full bg-orange-500 animate-ping';
                 uiStatusText.className = 'font-black text-sm tracking-widest uppercase text-orange-500 drop-shadow-[0_0_5px_#ff6400]';
-                uiStatusText.innerText = 'Calculating...';
+                uiStatusText.innerText = gameMode === 'local' ? 'Player 2 Turn' : 'Calculating...';
             }
         }
 
@@ -380,7 +462,7 @@
                 let innerFill = 'none';
                 let filter = '';
                 let cursor = 'cursor-pointer';
-                let isHoverable = (!owner && turn === 'user' && !winner);
+                let isHoverable = (!owner && !winner && (gameMode === 'local' || turn === 'user'));
 
                 if (owner === 'user') {
                     fill = 'rgba(0, 255, 255, 0.1)'; stroke = '#008888';
@@ -480,18 +562,28 @@
 
         // --- 상호작용 및 턴 관리 ---
         function handleTileClick(q, r) {
-            if (winner || turn !== 'user' || board[`${q},${r}`]) return;
+            if (winner || board[`${q},${r}`]) return;
+            if (gameMode === 'ai' && turn !== 'user') return; // AI 모드일 땐 유저 턴에만 클릭 가능
 
-            board[`${q},${r}`] = 'user';
-            addLog(`[USER] 좌표 [${q}, ${r}] 점령 완료.`);
+            const currentPlayer = turn;
+            board[`${q},${r}`] = currentPlayer;
 
-            if (checkWin(board, q, r, 'user')) {
-                endGame('user');
+            if (currentPlayer === 'user') {
+                addLog(gameMode === 'local' ? `[Player 1] 좌표 [${q}, ${r}] 점령 완료.` : `[USER] 좌표 [${q}, ${r}] 점령 완료.`);
             } else {
-                turn = 'robot';
+                addLog(`[Player 2] 좌표 [${q}, ${r}] 점령 완료.`);
+            }
+
+            if (checkWin(board, q, r, currentPlayer)) {
+                endGame(currentPlayer);
+            } else {
+                turn = currentPlayer === 'user' ? 'robot' : 'user';
                 renderBoard();
                 renderStatus();
-                processRobotTurn();
+                
+                if (gameMode === 'ai' && turn === 'robot') {
+                    processRobotTurn();
+                }
             }
         }
 
@@ -525,13 +617,15 @@
             renderBoard();
             
             if(result === 'user') {
-                addLog('!!! [SYSTEM] 유저 승리! 코어 해킹에 성공했습니다. !!!');
+                const winMsg = gameMode === 'local' ? '!!! [SYSTEM] Player 1 승리! !!!' : '!!! [SYSTEM] 유저 승리! 코어 해킹에 성공했습니다. !!!';
+                addLog(winMsg);
                 uiWinnerText.className = 'text-5xl md:text-7xl font-black mb-10 tracking-wider text-cyan-400 drop-shadow-[0_0_20px_#00ffff]';
-                uiWinnerText.innerText = 'ACCESS GRANTED';
+                uiWinnerText.innerText = gameMode === 'local' ? 'P1 WINS' : 'ACCESS GRANTED';
             } else if (result === 'robot') {
-                addLog('!!! [SYSTEM] 로봇 승리. 방화벽에 의해 차단되었습니다. !!!');
+                const winMsg = gameMode === 'local' ? '!!! [SYSTEM] Player 2 승리! !!!' : '!!! [SYSTEM] 로봇 승리. 방화벽에 의해 차단되었습니다. !!!';
+                addLog(winMsg);
                 uiWinnerText.className = 'text-5xl md:text-7xl font-black mb-10 tracking-wider text-orange-500 drop-shadow-[0_0_20px_#ff6400]';
-                uiWinnerText.innerText = 'ACCESS DENIED';
+                uiWinnerText.innerText = gameMode === 'local' ? 'P2 WINS' : 'ACCESS DENIED';
             } else {
                 addLog('[SYSTEM] 더 이상 공간이 없습니다. 무승부입니다.');
                 uiWinnerText.className = 'text-5xl md:text-7xl font-black mb-10 tracking-wider text-gray-400';
