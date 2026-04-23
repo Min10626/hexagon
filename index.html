@@ -168,6 +168,8 @@
                     </div>
                 </div>
 
+                <p id="name-error" class="hidden text-red-500 text-xs font-bold text-center tracking-widest bg-red-900/20 py-2 border border-red-900/50">! 플레이어 이름을 다르게 설정하십시오 !</p>
+
                 <div class="flex flex-col gap-3 mt-4">
                     <button onclick="confirmNames(false)" class="w-full relative py-4 bg-cyan-950/30 text-cyan-400 hover:text-white transition-all duration-300 font-bold tracking-[0.2em] text-lg border border-cyan-500/30 hover:border-cyan-400 shadow-[0_0_10px_rgba(0,255,255,0.1)]">
                         START BATTLE
@@ -392,6 +394,7 @@
         const uiToggleText = document.getElementById('toggle-text');
         const uiP1Input = document.getElementById('p1-input');
         const uiP2Input = document.getElementById('p2-input');
+        const uiNameError = document.getElementById('name-error');
 
         // --- 초기화 및 UI 렌더링 ---
         function updateDifficulty() {
@@ -427,19 +430,29 @@
             } else {
                 uiP1Input.value = '';
                 uiP2Input.value = '';
+                uiNameError.classList.add('hidden');
                 uiNameScreen.style.display = 'flex';
             }
         }
 
         function confirmNames(isSkip) {
+            uiNameError.classList.add('hidden');
             if (isSkip) {
                 p1Name = 'P1';
                 p2Name = 'P2';
             } else {
                 const input1 = uiP1Input.value.trim();
                 const input2 = uiP2Input.value.trim();
-                p1Name = input1 || 'P1';
-                p2Name = input2 || 'P2';
+                const tempP1 = input1 || 'P1';
+                const tempP2 = input2 || 'P2';
+                
+                if (tempP1 === tempP2) {
+                    uiNameError.classList.remove('hidden');
+                    return;
+                }
+                
+                p1Name = tempP1;
+                p2Name = tempP2;
             }
             startGame();
         }
@@ -663,12 +676,17 @@
             if (checkWin(board, q, r, currentPlayer)) {
                 endGame(currentPlayer);
             } else {
-                turn = currentPlayer === 'user' ? 'robot' : 'user';
-                renderBoard();
-                renderStatus();
-                
-                if (gameMode === 'ai' && turn === 'robot') {
-                    processRobotTurn();
+                const emptyCoords = Object.keys(board).filter(key => board[key] === null);
+                if (emptyCoords.length === 0) {
+                    endGame('draw');
+                } else {
+                    turn = currentPlayer === 'user' ? 'robot' : 'user';
+                    renderBoard();
+                    renderStatus();
+                    
+                    if (gameMode === 'ai' && turn === 'robot') {
+                        processRobotTurn();
+                    }
                 }
             }
         }
@@ -706,14 +724,14 @@
                 const winMsg = gameMode === 'local' ? `!!! [SYSTEM] ${p1Name} 승리! !!!` : '!!! [SYSTEM] 유저 승리! 코어 해킹에 성공했습니다. !!!';
                 addLog(winMsg);
                 uiWinnerText.className = 'font-black-han text-5xl md:text-7xl mb-10 tracking-wider text-cyan-400 drop-shadow-[0_0_20px_#00ffff] uppercase';
-                uiWinnerText.innerText = gameMode === 'local' ? `${p1Name} WINS` : 'ACCESS GRANTED';
+                uiWinnerText.innerText = gameMode === 'local' ? `${p1Name} WINS` : '유저 승리';
             } else if (result === 'robot') {
                 const winMsg = gameMode === 'local' ? `!!! [SYSTEM] ${p2Name} 승리! !!!` : '!!! [SYSTEM] 로봇 승리. 방화벽에 의해 차단되었습니다. !!!';
                 addLog(winMsg);
                 uiWinnerText.className = 'font-black-han text-5xl md:text-7xl mb-10 tracking-wider text-orange-500 drop-shadow-[0_0_20px_#ff6400] uppercase';
-                uiWinnerText.innerText = gameMode === 'local' ? `${p2Name} WINS` : 'ACCESS DENIED';
+                uiWinnerText.innerText = gameMode === 'local' ? `${p2Name} WINS` : '로봇 승리';
             } else {
-                addLog('[SYSTEM] 더 이상 공간이 없습니다. 무승부입니다.');
+                addLog('[SYSTEM] 화면이 가득 찼습니다. 무승부로 종료합니다.');
                 uiWinnerText.className = 'font-black-han text-5xl md:text-7xl mb-10 tracking-wider text-gray-400 uppercase';
                 uiWinnerText.innerText = 'DRAW MATCH';
             }
